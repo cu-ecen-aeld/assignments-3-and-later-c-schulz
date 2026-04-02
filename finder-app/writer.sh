@@ -1,8 +1,9 @@
 #!/bin/sh
 
+usage="$0 <writefile> <writestr>"
+
 writefile=$1
 writestr=$2
-usage="$0 <writefile> <writestr>"
 
 if [ ! $# -eq 2 ]
 then
@@ -18,4 +19,5 @@ fi
 
 mkdir -p $(dirname ${writefile})
 echo "${writestr}" > ${writefile}
+
 exit 0

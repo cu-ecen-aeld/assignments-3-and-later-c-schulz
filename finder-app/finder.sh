@@ -1,8 +1,9 @@
 #!/bin/sh
 
+usage="$0 <filesdir> <searchstr>"
+
 filesdir=$1
 searchstr=$2
-usage="$0 <filesdir> <searchstr>"
 
 if [ ! $# -eq 2 ]
 then
