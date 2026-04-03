@@ -6,15 +6,10 @@ int main(int argc, char **argv)
 {
     openlog(NULL, 0, LOG_USER);
 
-    char* usage = argv[0];
-    strcat(usage, " <writefile> <writestr>");
-
     if (argc != 3)
     {
-        char* err = "Wrong number of arguments given. Usage: ";
-        strcat(err, usage);
-
-        syslog(LOG_ERR, err);
+        syslog(LOG_ERR, "Wrong number of arguments given. Usage: %s <writefile> <writestr>", argv[0]);
+        closelog();
         return 1;
     }
 
@@ -22,36 +17,32 @@ int main(int argc, char **argv)
     const char* writestr  = argv[2];
     if ((strlen(writefile) == 0) || (strlen(writestr) == 0))
     {
-        char* err = "At least one parameter was not specified. Usage: ";
-        strcat(err, usage);
-
-        syslog(LOG_ERR, err);
+        syslog(LOG_ERR, "At least one parameter was not specified. Usage: %s <writefile> <writestr>", argv[0]);
+        closelog();
         return 1;
     }
 
-    char* info = "Writing ";
-    strcat(info, writestr);
-    strcat(info, " to ");
-    strcat(info, writefile);
-    strcat(info, ".");
-    syslog(LOG_DEBUG, info);
+    syslog(LOG_DEBUG, "Writing %s to %s.", writestr, writefile);
 
     // no need to create directory, assume directory already exists
-    FILE *fptr = fopen(writefile, "w");
+    FILE *fptr = fopen(argv[1], "w");
     if (!fptr)
     {
         syslog(LOG_ERR, "File could not be opened.");
+        closelog();
         return 1;
     }
 
-    const int rv = fprintf(fptr, writestr);
+    const int rv = fputs(writestr, fptr);
     if (rv < 0)
     {
         syslog(LOG_ERR, "Error writing to file.");
         fclose(fptr);
+        closelog();
         return 1;
     }
 
     fclose(fptr);
+    closelog();
     return 0;
 }
