@@ -129,7 +129,7 @@ cp ${WORKDIR}/conf/assignment.txt   ${OUTDIR}/rootfs/home/conf/
 # DONE
 
 # DONE: Chown the root directory
-sudo chown root:root ${OUTDIR}/rootfs
+sudo chown -R root:root ${OUTDIR}/rootfs
 # DONE
 
 # DONE: Create initramfs.cpio.gz
