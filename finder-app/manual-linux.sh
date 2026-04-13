@@ -6,8 +6,8 @@ set -e
 set -u
 
 # DONE: install additionally required packages
-# - flex
-# - bison
+# - flex bison                       (for this script)
+# - qemu-system-arm qemu-efi-aarch64 (for qemu)
 # DONE
 
 OUTDIR=/tmp/aeld
