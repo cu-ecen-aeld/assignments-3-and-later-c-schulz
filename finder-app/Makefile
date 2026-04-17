@@ -1,9 +1,11 @@
 # Assume "CROSS_COMPILE" set to "aarch64-none-linux-gnu-"
+CROSS_COMPILE ?=
+CC = $(CROSS_COMPILE)gcc
 
 # Default target
 all:
-	$(CROSS_COMPILE)gcc -g -Wall -c -o writer.o writer.c
-	$(CROSS_COMPILE)gcc -g -Wall -o writer writer.o
+	$(CC) -g -Wall -c -o writer.o writer.c
+	$(CC) -g -Wall -o writer writer.o
 
 # Clean target
 clean:
