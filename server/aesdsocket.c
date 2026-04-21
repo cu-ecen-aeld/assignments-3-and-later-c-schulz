@@ -69,6 +69,28 @@ void signal_handler(int signum)
     errno = errno_tmp;
 }
 
+int fork_off_daemon(void)
+{
+    pid_t pid = fork();
+    if (pid < 0)
+    {
+        syslog(LOG_ERR, "Error in fork(): %d", errno);
+        return -1;
+    }
+    else if (pid > 0)
+    {
+        // this is the parent
+        // we want to exit the process here directly, child handles everything
+        exit(0);
+    }
+    else
+    {
+        // this is the child
+        // exit function to continue with all the socket stuff
+        return 0;
+    }
+}
+
 void setup_signal_handler(void)
 {
     // setup signal handler
@@ -88,7 +110,7 @@ void setup_signal_handler(void)
     syslog(LOG_INFO, "Successfully registered signal handler.");
 }
 
-int handle_socket(void)
+int handle_socket(bool daemon_mode)
 {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -129,7 +151,7 @@ int handle_socket(void)
     }
 
     // bind socket to file descriptor
-    rc = bind(socket_fd, res->ai_addr, sizeof(struct sockaddr));//*(res->ai_addr)));
+    rc = bind(socket_fd, res->ai_addr, sizeof(struct sockaddr));
     if (rc != 0)
     {
         syslog(LOG_ERR, "Error in bind(): %d", errno);
@@ -139,6 +161,18 @@ int handle_socket(void)
 
     // free addrinfo, was allocated in getaddrinfo
     free_and_reset_addrinfo();
+
+    // after binding port, fork off daemon if desired
+    if (daemon_mode)
+    {
+        rc = fork_off_daemon();
+        if (rc != 0)
+        {
+            syslog(LOG_ERR, "Error starting as daemon: %d", rc);
+            cleanup_before_exit();
+            return -1;
+        }
+    }
 
     // listen for connection
     rc = listen(socket_fd, 5);
@@ -244,6 +278,13 @@ int main(int argc, char **argv)
     // setup signal handler
     setup_signal_handler();
 
+    // parse arguments to detect daemon mode parameter
+    bool daemon_mode = false;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-d"))
+            daemon_mode = true;
+    }
+
     // execute the socket stuff
-    return handle_socket();
+    return handle_socket(daemon_mode);
 }
