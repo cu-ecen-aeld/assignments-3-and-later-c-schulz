@@ -21,19 +21,10 @@ int stream_fd = 0;
 int file_fd   = 0;
 struct addrinfo *res = NULL;    // malloced within getaddrinfo
 
-void free_and_reset_addrinfo(void)
-{
-    if (res)
-    {
-        freeaddrinfo(res);
-        res = NULL;
-    }
-}
-
 void cleanup_before_exit(void)
 {
     // free addrinfo
-    free_and_reset_addrinfo();
+    if (res)        freeaddrinfo(res);
 
     // close open sockets
     if (file_fd)    close(file_fd);
@@ -45,6 +36,13 @@ void cleanup_before_exit(void)
 
     // close syslog
     closelog();
+
+    // no need to reset fds and pointers because we will exit here
+    // but let's do it anyways
+    file_fd   = 0;
+    stream_fd = 0;
+    socket_fd = 0;
+    res       = NULL;
 }
 
 void signal_handler(int signum)
@@ -71,6 +69,7 @@ void signal_handler(int signum)
 
 int fork_off_daemon(void)
 {
+    // actually fork off
     pid_t pid = fork();
     if (pid < 0)
     {
@@ -91,7 +90,7 @@ int fork_off_daemon(void)
     }
 }
 
-void setup_signal_handler(void)
+int setup_signal_handler(void)
 {
     // setup signal handler
     struct sigaction signal_action;
@@ -101,13 +100,16 @@ void setup_signal_handler(void)
     // register signals
     if (sigaction(SIGTERM, &signal_action, NULL) != 0) {
         syslog(LOG_ERR, "Error registering SIGTERM: %d", errno);
+        return -1;
     }
     if (sigaction(SIGINT, &signal_action, NULL) != 0) {
         syslog(LOG_ERR, "Error registering SIGINT: %d", errno);
+        return -1;
     }
 
     // print success to syslog
     syslog(LOG_INFO, "Successfully registered signal handler.");
+    return 0;
 }
 
 int handle_socket(bool daemon_mode)
@@ -160,7 +162,8 @@ int handle_socket(bool daemon_mode)
     }
 
     // free addrinfo, was allocated in getaddrinfo
-    free_and_reset_addrinfo();
+    freeaddrinfo(res);
+    res = NULL;
 
     // after binding port, fork off daemon if desired
     if (daemon_mode)
@@ -276,7 +279,13 @@ int main(int argc, char **argv)
     openlog(NULL, 0, LOG_USER);
 
     // setup signal handler
-    setup_signal_handler();
+    int rc = setup_signal_handler();
+    if (rc != 0)
+    {
+        syslog(LOG_ERR, "Error setting up signal handler: %d", rc);
+        cleanup_before_exit();
+        return -1;
+    }
 
     // parse arguments to detect daemon mode parameter
     bool daemon_mode = false;
