@@ -175,7 +175,7 @@ int handle_socket(bool daemon_mode)
     rc = setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_opt, sizeof(socket_opt));
     if (rc != 0)
     {
-        syslog(LOG_ERR, "Error in setsockopt(): %d", rc);
+        syslog(LOG_ERR, "Error in setsockopt(): %d", errno);
         cleanup_before_exit();
         return -1;
     }
@@ -310,7 +310,7 @@ int main(int argc, char **argv)
     int rc = setup_signal_handler();
     if (rc != 0)
     {
-        syslog(LOG_ERR, "Error setting up signal handler: %d", rc);
+        syslog(LOG_ERR, "Error setting up signal handler.");
         cleanup_before_exit();
         return -1;
     }
