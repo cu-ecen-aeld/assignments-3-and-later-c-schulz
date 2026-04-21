@@ -85,6 +85,34 @@ int fork_off_daemon(void)
     else
     {
         // this is the child
+        // start new session
+        int rc = setsid();
+        if (rc < 0)
+        {
+            syslog(LOG_ERR, "Error in setsid(): %d", errno);
+            return -1;
+        }
+
+        // change to root directory
+        rc = chdir("/");
+        if (rc != 0)
+        {
+            syslog(LOG_ERR, "Error in chdir(): %d", errno);
+            return -1;
+        }
+
+        // redirect stdin, stdout and stderr to /dev/null
+        int devnull_fd = open("/dev/null", O_RDWR);
+        if (devnull_fd < 0)
+        {
+            syslog(LOG_ERR, "Error opening /dev/null: %d", errno);
+            return -1;
+        }
+        dup2(devnull_fd, STDIN_FILENO);
+        dup2(devnull_fd, STDOUT_FILENO);
+        dup2(devnull_fd, STDERR_FILENO);
+        close(devnull_fd);
+
         // exit function to continue with all the socket stuff
         return 0;
     }
@@ -171,7 +199,7 @@ int handle_socket(bool daemon_mode)
         rc = fork_off_daemon();
         if (rc != 0)
         {
-            syslog(LOG_ERR, "Error starting as daemon: %d", rc);
+            syslog(LOG_ERR, "Error starting as daemon.");
             cleanup_before_exit();
             return -1;
         }
@@ -190,7 +218,7 @@ int handle_socket(bool daemon_mode)
     file_fd = open(filename, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, S_IRWXU | S_IRWXG | S_IRWXO);
     if (file_fd < 0)
     {
-        syslog(LOG_ERR, "Error in open(): %d", file_fd);
+        syslog(LOG_ERR, "Error in open(): %d", errno);
         cleanup_before_exit();
         return -1;
     }
