@@ -10,6 +10,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <pthread.h>
+
+#include "queue.h"  // linked list implementation from freebsd-src
 
 // pre-defined parameters
 static const char* filename = "/var/tmp/aesdsocketdata";
@@ -17,9 +20,23 @@ static const char* port = "9000";
 
 // global parameters, required globally for signal handler
 int socket_fd = 0;
-int stream_fd = 0;
 int file_fd   = 0;
 struct addrinfo *res = NULL;    // malloced within getaddrinfo
+
+// thread parameters
+pthread_mutex_t mutex;
+
+struct thread_data
+{
+    // thread-specific info
+    pthread_t thread;
+    pthread_mutex_t* mutex_ptr;
+    int stream_fd;
+    struct sockaddr conn_addr;
+
+    // linked list pointer
+    SLIST_ENTRY(thread_data) next;
+};
 
 void cleanup_before_exit(void)
 {
@@ -28,7 +45,6 @@ void cleanup_before_exit(void)
 
     // close open sockets
     if (file_fd)    close(file_fd);
-    if (stream_fd)  close(stream_fd);
     if (socket_fd)  close(socket_fd);
 
     // delete file
@@ -40,7 +56,6 @@ void cleanup_before_exit(void)
     // no need to reset fds and pointers because we will exit here
     // but let's do it anyways
     file_fd   = 0;
-    stream_fd = 0;
     socket_fd = 0;
     res       = NULL;
 }
@@ -140,6 +155,153 @@ int setup_signal_handler(void)
     return 0;
 }
 
+void* handle_timestamp (void*)
+{
+    while (true)
+    {
+        // lock mutex before writing to file
+        int rc = pthread_mutex_lock(&mutex);
+        if (rc != 0)
+        {
+            syslog(LOG_ERR, "Error in mutex lock(): %d", rc);
+            break;
+        }
+
+        // get current time and convert to local time
+        time_t raw_time;
+        time(&raw_time);
+        struct tm *ts_info = localtime(&raw_time);
+        if (ts_info == NULL)
+        {
+            syslog(LOG_ERR, "Error getting localtime: %d", errno);
+            pthread_mutex_unlock(&mutex);
+            break;
+        }
+
+        // convert timestamp info to string
+        char ts_buf[128];
+        int ts_size = strftime(ts_buf, sizeof(ts_buf), "timestamp:%a, %d %b %Y %T %z\n", ts_info);
+
+        // write timestamp data to file
+        rc = write(file_fd, ts_buf, ts_size);
+        if (rc < ts_size)
+        {
+            syslog(LOG_DEBUG, "Error in write(): %d", errno);
+        }
+
+        // unlock mutex
+        rc = pthread_mutex_unlock(&mutex);
+        if (rc != 0)
+        {
+            syslog(LOG_ERR, "Error in mutex unlock(): %d", rc);
+            break;
+        }
+
+        // sleep 10sec
+        usleep (10000000);
+    }
+
+    return NULL;
+}
+
+void* handle_connection (void* thread_param)
+{
+    // obtain thread arguments from your parameter
+    struct thread_data* thread_args = (struct thread_data *) thread_param;
+
+    // print to syslog
+    syslog(LOG_INFO, "Accepted connection from %d.%d.%d.%d.",
+        (int)(thread_args->conn_addr).sa_data[2],
+        (int)(thread_args->conn_addr).sa_data[3],
+        (int)(thread_args->conn_addr).sa_data[4],
+        (int)(thread_args->conn_addr).sa_data[5]);
+
+    // buffer for read/write ops
+    static const int buf_size = 4096;
+    char recv_buf[buf_size];
+    char send_buf[buf_size];
+
+    // forever read data from socket (terminated by break)
+    while (true)
+    {
+        // receive (read) data
+        int recv_size = recv(thread_args->stream_fd, recv_buf, buf_size, 0);
+        if (recv_size == 0)
+        {
+            // regular end of receiving
+            break;
+        }
+        else if (recv_size == -1)
+        {
+            syslog(LOG_DEBUG, "Error in recv(): %d", errno);
+            break;
+        }
+        else
+        {
+            // lock mutex
+            int rc = pthread_mutex_lock(thread_args->mutex_ptr);
+            if (rc != 0)
+            {
+                syslog(LOG_ERR, "Error in mutex lock(): %d", rc);
+                break;
+            }
+
+            // write received data to file
+            rc = write(file_fd, recv_buf, recv_size);
+            if (rc < recv_size)
+            {
+                syslog(LOG_DEBUG, "Error in write(): %d", errno);
+            }
+
+            // unlock mutex --> TODO: move this after send?
+            rc = pthread_mutex_unlock(thread_args->mutex_ptr);
+            if (rc != 0)
+            {
+                syslog(LOG_ERR, "Error in mutex unlock(): %d", rc);
+                break;
+            }
+
+            // if end of package is reached, send file via socket
+            if (recv_buf[recv_size-1] == '\n') {
+
+                // seek back to begin of file before reading
+                rc = lseek(file_fd, 0, SEEK_SET);
+                if (rc != 0)
+                {
+                    syslog(LOG_DEBUG, "Error in lseek(): %d", errno);
+                }
+
+                // send full content of file via socket back to client
+                int sz;
+                while ((sz = read(file_fd, send_buf, buf_size)) > 0)
+                {
+                    syslog(LOG_DEBUG, "Read %d bytes", (int)sz);
+                    rc = send(thread_args->stream_fd, send_buf, sz, MSG_DONTWAIT);
+                    if (rc == -1)
+                    {
+                        syslog(LOG_DEBUG, "Error in send(): %d", errno);
+                    }
+                }
+            }
+
+            // don't break, continue receiving
+        }
+    }
+
+    // close connection and print to syslog
+    close(thread_args->stream_fd);
+    thread_args->stream_fd = 0;
+
+    // print to syslog
+    syslog(LOG_INFO, "Closed connection from %d.%d.%d.%d.",
+        (int)(thread_args->conn_addr).sa_data[2],
+        (int)(thread_args->conn_addr).sa_data[3],
+        (int)(thread_args->conn_addr).sa_data[4],
+        (int)(thread_args->conn_addr).sa_data[5]);
+
+    return thread_param;
+}
+
 int handle_socket(bool daemon_mode)
 {
     struct addrinfo hints;
@@ -147,10 +309,6 @@ int handle_socket(bool daemon_mode)
     hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags    = AI_PASSIVE;
-
-    static const int buf_size = 4096;
-    char recv_buf[buf_size];
-    char send_buf[buf_size];
 
     // allocate address info for port 9000
     int rc = getaddrinfo(NULL, port, &hints, &res);
@@ -223,13 +381,28 @@ int handle_socket(bool daemon_mode)
         return -1;
     }
 
+    // initialize linked list
+    SLIST_HEAD(thread_list, thread_data);   // defines a struct
+    struct thread_list thread_head;         // instantiates the struct
+    SLIST_INIT(&thread_head);               // initializes the struct
+
+    // create thread for timestamp writing
+    pthread_t time_thread;
+    rc = pthread_create(&time_thread, NULL, handle_timestamp, NULL);
+    if (rc != 0)
+    {
+        syslog(LOG_ERR, "Error in pthread_create(): %d", rc);
+        cleanup_before_exit();
+        return -1;
+    }
+
     // in a loop, forever restart accepting connections
     while (true)
     {
         // accept new connection
         struct sockaddr addr;
         socklen_t addrlen = sizeof(addr);
-        stream_fd = accept(socket_fd, &addr, &addrlen);
+        int stream_fd = accept(socket_fd, &addr, &addrlen);
         if (stream_fd < 0)
         {
             syslog(LOG_ERR, "Error in accept(): %d", errno);
@@ -237,65 +410,37 @@ int handle_socket(bool daemon_mode)
             return -1;
         }
 
-        // print to syslog
-        syslog(LOG_INFO, "Accepted connection from %d.%d.%d.%d.", (int)addr.sa_data[2], (int)addr.sa_data[3], (int)addr.sa_data[4], (int)addr.sa_data[5]);
+        // create new thread
+        struct thread_data* thread_args = (struct thread_data *) malloc (sizeof (struct thread_data));
+        thread_args->mutex_ptr = &mutex;
+        thread_args->stream_fd = stream_fd;
+        thread_args->conn_addr = addr;
 
-        // forever read data from socket (terminated by break)
-        while (true)
+        rc = pthread_create(&(thread_args->thread), NULL, handle_connection, thread_args);
+        if (rc != 0)
         {
-            // receive (read) data
-            int recv_size = recv(stream_fd, recv_buf, buf_size, 0);
-            if (recv_size == 0)
-            {
-                // regular end of receiving
-                break;
-            }
-            else if (recv_size == -1)
-            {
-                syslog(LOG_DEBUG, "Error in recv(): %d", errno);
-                break;
-            }
-            else
-            {
-                // write received data to file
-                rc = write(file_fd, recv_buf, recv_size);
-                if (rc < recv_size)
-                {
-                    syslog(LOG_DEBUG, "Error in write(): %d", errno);
-                }
-
-                // if end of package is reached, send file via socket
-                if (recv_buf[recv_size-1] == '\n') {
-
-                    // seek back to begin of file before reading
-                    rc = lseek(file_fd, 0, SEEK_SET);
-                    if (rc != 0)
-                    {
-                        syslog(LOG_DEBUG, "Error in lseek(): %d", errno);
-                    }
-
-                    // send full content of file via socket back to client
-                    int sz;
-                    while ((sz = read(file_fd, send_buf, buf_size)) > 0)
-                    {
-                        syslog(LOG_DEBUG, "Read %d bytes", (int)sz);
-                        rc = send(stream_fd, send_buf, sz, MSG_DONTWAIT);
-                        if (rc == -1)
-                        {
-                            syslog(LOG_DEBUG, "Error in send(): %d", errno);
-                        }
-                    }
-                }
-
-                // don't break, continue receiving
-            }
+            syslog(LOG_ERR, "Error in pthread_create(): %d", rc);
+            free(thread_args);
+            cleanup_before_exit();
+            return -1;
         }
 
-        // close connection and print to syslog
-        close(stream_fd);
-        stream_fd = 0;
-        syslog(LOG_INFO, "Closed connection from %d.%d.%d.%d.", (int)addr.sa_data[2], (int)addr.sa_data[3], (int)addr.sa_data[4], (int)addr.sa_data[5]);
+        // add thread to linked list
+        SLIST_INSERT_HEAD(/* list */&thread_head, /* element */thread_args, /* member name */next);
     }
+
+    // join all threads from linked list
+    struct thread_data *item, *tItem;
+    SLIST_FOREACH_SAFE(/* element */item, /* list */&thread_head, /* member name */next, /* ? */tItem)
+    {
+        // join thread, remove from linked list and free the linked list data structure
+        pthread_join(item->thread, NULL);
+        SLIST_REMOVE(/* list */&thread_head, /* element */item, /* datatype */thread_data, /* member name */next);
+        free(item);
+    }
+
+    // join timestamp writing thread
+    pthread_join(time_thread, NULL);
 
     cleanup_before_exit();  // closes all fds
     return 0;
