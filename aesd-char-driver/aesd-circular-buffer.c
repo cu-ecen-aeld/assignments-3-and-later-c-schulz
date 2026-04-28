@@ -29,9 +29,30 @@
 struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn )
 {
-    /**
-    * TODO: implement per description
-    */
+    // validity of parameter pointers
+    if ((buffer == NULL) || (entry_offset_byte_rtn == NULL))
+        return NULL;
+
+    // initialize pointer to the current entry with the out pointer
+    uint8_t current_entry_offs = buffer->out_offs;
+    do
+    {
+        // if the offset lies within the next entry, that's our return value
+        if (char_offset < buffer->entry[current_entry_offs].size)
+        {
+            *entry_offset_byte_rtn = char_offset;
+            return &(buffer->entry[current_entry_offs]);
+        }
+        // if the offset is larger than that, we switch to the next entry
+        else
+        {
+            char_offset -= buffer->entry[current_entry_offs].size;
+            current_entry_offs = (current_entry_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        }
+    }
+    // we can only read between the out pointer and the in pointer, if we reach the in pointer again, we are done
+    while (current_entry_offs != buffer->in_offs);
+
     return NULL;
 }
 
@@ -44,9 +65,21 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 */
 void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    /**
-    * TODO: implement per description
-    */
+    // validity of parameter pointers
+    if ((buffer == NULL) || (add_entry == NULL))
+        return;
+
+    // add entry to the buffer and increase in pointer
+    buffer->entry[buffer->in_offs] = *add_entry;
+    buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+    // if buffer was already full, increase out pointer as well
+    if (buffer->full == true)
+        buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+    // if in pointer points to out pointer after increasing, buffer switches to being full
+    if (buffer->in_offs == buffer->out_offs)
+        buffer->full = true;
 }
 
 /**
