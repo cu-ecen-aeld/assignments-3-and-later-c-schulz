@@ -90,7 +90,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 
 unlock_read:
     // unlock circular buffer mutex
-    mutex_unlock(&aesd_device.mutex);
+    mutex_unlock(&dev->mutex);
 end_read:
     // ---
 
@@ -154,7 +154,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
 unlock_write:
     // unlock circular buffer mutex
-    mutex_unlock(&aesd_device.mutex);
+    mutex_unlock(&dev->mutex);
 end_write:
     // ---
 
