@@ -72,9 +72,8 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     size_t offset = 0;
     struct aesd_buffer_entry *entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *fpos, &offset);
 
-    // and copy it into userspace
-    if (entry)
-    {
+    // if any data exists, copy it into userspace
+    if (entry) {
         // returned offset is < size of entry and >= 0, so we need to read at max the rest of the entry
         // however, count could be even smaller, so we need the minimum of those two
         size_t read_count = min((entry->size - offset), count);
@@ -89,10 +88,10 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         *f_pos += (read - bytes_not_copied);
     }
 
-unlock_write:
+unlock_read:
     // unlock circular buffer mutex
     mutex_unlock(&aesd_device.mutex);
-end_write:
+end_read:
     // ---
 
     return retval;
@@ -124,10 +123,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
     // for appending data, first reallocate the entry with the new size (old size + buffer size)...
     dev->tmp.buffptr = krealloc(dev->tmp.buffptr, dev->tmp.size + count, GFP_KERNEL);
-    if (!dev->tmp.buffptr) {    // returns address
-        retval = -ENOMEM;
+    if (!dev->tmp.buffptr)
         goto unlock_write;
-    }
 
     // ... and then copy the data from userspace into the newly allocated part of the entry object
     int bytes_not_copied = copy_from_user(/* to */dev->tmp.buffptr + dev->tmp.size, /* from */buf, /* number of bytes */count);
