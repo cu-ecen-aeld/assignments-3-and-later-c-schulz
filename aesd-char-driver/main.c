@@ -70,16 +70,16 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 
     // fetch the data from the circular buffer
     size_t offset = 0;
-    struct aesd_buffer_entry *entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *fpos, &offset);
+    const struct aesd_buffer_entry *entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *fpos, &offset);
 
     // if any data exists, copy it into userspace
     if (entry) {
         // returned offset is < size of entry and >= 0, so we need to read at max the rest of the entry
         // however, count could be even smaller, so we need the minimum of those two
-        size_t read_count = min((entry->size - offset), count);
+        const size_t read_count = min((entry->size - offset), count);
 
         // actually copy data into userspace
-        int bytes_not_copied = copy_to_user(/* to */buf, /* from */entry->buffptr + offset, /* number of bytes */read_count);
+        const int bytes_not_copied = copy_to_user(/* to */buf, /* from */entry->buffptr + offset, /* number of bytes */read_count);
 
         // update the return value with the number of read bytes
         retval = (read - bytes_not_copied);
@@ -112,7 +112,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         goto end_write;
 
     // lock circular buffer mutex
-    int rc = mutex_lock_interruptible(&dev->mutex);
+    const int rc = mutex_lock_interruptible(&dev->mutex);
     if (rc != 0) {              // rc = -EINTR if signal received while waiting, rc = 0 in case of success
         retval = -ERESTARTSYS;
         goto end_write;
@@ -127,7 +127,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         goto unlock_write;
 
     // ... and then copy the data from userspace into the newly allocated part of the entry object
-    int bytes_not_copied = copy_from_user(/* to */dev->tmp.buffptr + dev->tmp.size, /* from */buf, /* number of bytes */count);
+    const int bytes_not_copied = copy_from_user(/* to */dev->tmp.buffptr + dev->tmp.size, /* from */buf, /* number of bytes */count);
 
     // also update the size of the entry object
     dev->tmp.size += (count - bytes_not_copied);
