@@ -63,14 +63,21 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 * Any necessary locking must be handled by the caller
 * Any memory referenced in @param add_entry must be allocated by and/or must have a lifetime managed by the caller.
 */
-void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
+// void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
+const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
     // validity of parameter pointers
     if ((buffer == NULL) || (add_entry == NULL))
-        return;
+        return NULL;
+
+    // if buffer is already full, remember pointer to the value we are going to overwrite
+    const char* old_entry = NULL;
+    if (buffer->full)
+        old_entry = buffer->entry[buffer->in_offs].buffptr;
 
     // add entry to the buffer and increase in pointer
-    buffer->entry[buffer->in_offs] = *add_entry;
+    buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
+    buffer->entry[buffer->in_offs].size = add_entry->size;
     buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
     // if buffer was already full, increase out pointer as well
@@ -80,6 +87,8 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
     // if in pointer points to out pointer after increasing, buffer switches to being full
     if (buffer->in_offs == buffer->out_offs)
         buffer->full = true;
+
+    return old_entry;
 }
 
 /**
