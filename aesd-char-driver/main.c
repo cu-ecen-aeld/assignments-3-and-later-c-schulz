@@ -58,17 +58,15 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     // ---
     // handle read
 
-    // get AESD buffer struct
+    // get AESD device struct
     struct aesd_dev *dev = filp->private_data;
     if (!dev)
         goto end_read;
 
     // lock circular buffer mutex
     int rc = mutex_lock_interruptible(&dev->mutex);
-    if (rc != 0) {              // rc = -EINTR if signal received while waiting, rc = 0 in case of success
-        retval = -ERESTARTSYS;
+    if (rc != 0)                // rc = -EINTR if signal received while waiting, rc = 0 in case of success
         goto end_read;
-    }
 
     // fetch the data from the circular buffer
     size_t offset = 0;
@@ -109,7 +107,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     // ---
     // handle write
 
-    // get AESD buffer struct
+    // get AESD device struct
     struct aesd_dev *dev = filp->private_data;
     if (!dev)
         goto end_write;
