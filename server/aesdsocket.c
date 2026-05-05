@@ -14,8 +14,17 @@
 
 #include "queue.h"  // linked list implementation from freebsd-src
 
+// compile switch for assignment 8
+#ifndef USE_AESD_CHAR_DEVICE
+#define USE_AESD_CHAR_DEVICE 1
+#endif
+
 // pre-defined parameters
+#if (USE_AESD_CHAR_DEVICE == 1)
+static const char* filename = "/dev/aesdchar";
+#else
 static const char* filename = "/var/tmp/aesdsocketdata";
+#endif
 static const char* port = "9000";
 
 // global parameters, required globally for signal handler
@@ -47,8 +56,10 @@ void cleanup_before_exit(void)
     if (file_fd)    close(file_fd);
     if (socket_fd)  close(socket_fd);
 
-    // delete file
+    // delete file (but don't remove /dev/aesdchar device)
+#if (USE_AESD_CHAR_DEVICE == 0)
     remove(filename);
+#endif
 
     // close syslog
     closelog();
@@ -386,6 +397,7 @@ int handle_socket(bool daemon_mode)
     struct thread_list thread_head;         // instantiates the struct
     SLIST_INIT(&thread_head);               // initializes the struct
 
+#if (USE_AESD_CHAR_DEVICE == 0)
     // create thread for timestamp writing
     pthread_t time_thread;
     rc = pthread_create(&time_thread, NULL, handle_timestamp, NULL);
@@ -395,6 +407,7 @@ int handle_socket(bool daemon_mode)
         cleanup_before_exit();
         return -1;
     }
+#endif
 
     // in a loop, forever restart accepting connections
     while (true)
@@ -439,8 +452,10 @@ int handle_socket(bool daemon_mode)
         free(item);
     }
 
+#if (USE_AESD_CHAR_DEVICE == 0)
     // join timestamp writing thread
     pthread_join(time_thread, NULL);
+#endif
 
     cleanup_before_exit();  // closes all fds
     return 0;
