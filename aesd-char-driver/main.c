@@ -45,6 +45,7 @@ int aesd_release(struct inode *inode, struct file *filp)
 
     // ---
     // handle release
+    filp->private_data = NULL;
     // ---
 
     return 0;
@@ -213,8 +214,9 @@ int aesd_init_module(void)
     // initialize the circular buffer of size 10
     aesd_circular_buffer_init(&aesd_device.buffer);
 
-    // the input buffer and the mutex do not need explicit initialization
-    // the input buffer will be reallocated in 'write'
+    // initialize input buffer as empty
+    aesd_device.tmp.buffptr = NULL;
+    aesd_device.tmp.size = 0;
 
     // ---
 
@@ -251,6 +253,7 @@ void aesd_cleanup_module(void)
     // cleanup the input buffer
     if (aesd_device.tmp.buffptr)
         kfree(aesd_device.tmp.buffptr);
+    aesd_device.tmp.size = 0;
 
     // ---
 
