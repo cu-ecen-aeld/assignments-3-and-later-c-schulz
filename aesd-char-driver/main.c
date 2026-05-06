@@ -137,7 +137,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         goto unlock_write;
 
     // ... and then copy the data from userspace into the newly allocated part of the entry object
-    bytes_not_copied = copy_from_user(/* to */(void*)dev->tmp.buffptr + dev->tmp.size, /* from */buf, /* number of bytes */count);
+    bytes_not_copied = copy_from_user(/* to */(void*)(dev->tmp.buffptr + dev->tmp.size), /* from */buf, /* number of bytes */count);
 
     // also update the size of the entry object
     dev->tmp.size += (count - bytes_not_copied);
