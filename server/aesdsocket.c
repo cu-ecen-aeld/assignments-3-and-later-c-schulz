@@ -29,7 +29,9 @@ static const char* port = "9000";
 
 // global parameters, required globally for signal handler
 int socket_fd = 0;
+#if (USE_AESD_CHAR_DEVICE == 0) // only use global fd if we are not using the kernel module
 int file_fd   = 0;
+#endif
 struct addrinfo *res = NULL;    // malloced within getaddrinfo
 
 // thread parameters
@@ -53,7 +55,9 @@ void cleanup_before_exit(void)
     if (res)        freeaddrinfo(res);
 
     // close open sockets
+#if (USE_AESD_CHAR_DEVICE == 0)
     if (file_fd)    close(file_fd);
+#endif
     if (socket_fd)  close(socket_fd);
 
     // delete file (but don't remove /dev/aesdchar device)
@@ -66,7 +70,9 @@ void cleanup_before_exit(void)
 
     // no need to reset fds and pointers because we will exit here
     // but let's do it anyways
+#if (USE_AESD_CHAR_DEVICE == 0)
     file_fd   = 0;
+#endif
     socket_fd = 0;
     res       = NULL;
 }
@@ -166,6 +172,7 @@ int setup_signal_handler(void)
     return 0;
 }
 
+#if (USE_AESD_CHAR_DEVICE == 0) // this function is unused in kernel module
 void* handle_timestamp (void*)
 {
     while (true)
@@ -214,6 +221,7 @@ void* handle_timestamp (void*)
 
     return NULL;
 }
+#endif
 
 void* handle_connection (void* thread_param)
 {
@@ -257,6 +265,16 @@ void* handle_connection (void* thread_param)
                 break;
             }
 
+#if (USE_AESD_CHAR_DEVICE == 1)
+            int file_fd = open(filename, O_RDWR);
+            if (file_fd < 0)
+            {
+                syslog(LOG_ERR, "Error in open(): %d", errno);
+                pthread_mutex_unlock(thread_args->mutex_ptr);
+                break;
+            }
+#endif
+
             // write received data to file
             rc = write(file_fd, recv_buf, recv_size);
             if (rc < recv_size)
@@ -294,6 +312,10 @@ void* handle_connection (void* thread_param)
                     }
                 }
             }
+
+#if (USE_AESD_CHAR_DEVICE == 1)
+            close(file_fd);
+#endif
 
             // don't break, continue receiving
         }
@@ -383,6 +405,7 @@ int handle_socket(bool daemon_mode)
         return -1;
     }
 
+#if (USE_AESD_CHAR_DEVICE == 0)
     // open (and create) file
     file_fd = open(filename, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, S_IRWXU | S_IRWXG | S_IRWXO);
     if (file_fd < 0)
@@ -391,6 +414,7 @@ int handle_socket(bool daemon_mode)
         cleanup_before_exit();
         return -1;
     }
+#endif
 
     // initialize linked list
     SLIST_HEAD(thread_list, thread_data);   // defines a struct
