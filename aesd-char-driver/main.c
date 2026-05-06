@@ -17,6 +17,7 @@
 #include <linux/types.h>
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
+#include <linux/slab.h> // krealloc
 #include "aesdchar.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
@@ -70,7 +71,7 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 
     // fetch the data from the circular buffer
     size_t offset = 0;
-    const struct aesd_buffer_entry *entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *fpos, &offset);
+    const struct aesd_buffer_entry *entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, &offset);
 
     // if any data exists, copy it into userspace
     if (entry) {
@@ -82,10 +83,10 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         const int bytes_not_copied = copy_to_user(/* to */buf, /* from */entry->buffptr + offset, /* number of bytes */read_count);
 
         // update the return value with the number of read bytes
-        retval = (read - bytes_not_copied);
+        retval = (read_count - bytes_not_copied);
 
         // and increase the f_pos by that amount
-        *f_pos += (read - bytes_not_copied);
+        *f_pos += (read_count - bytes_not_copied);
     }
 
 unlock_read:
