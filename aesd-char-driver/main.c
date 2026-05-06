@@ -53,6 +53,15 @@ int aesd_release(struct inode *inode, struct file *filp)
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
+    // ---
+    // ISO C90 requires all declarations at one place in the beginning
+    struct aesd_dev *dev;
+    const struct aesd_buffer_entry *entry;
+    size_t offset = 0;
+    size_t read_count = 0;
+    int bytes_not_copied = 0;
+    // ---
+
     ssize_t retval = 0;
     PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
 
@@ -60,27 +69,24 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     // handle read
 
     // get AESD device struct
-    struct aesd_dev *dev = filp->private_data;
-    if (!dev)
+    if (!(dev = filp->private_data))
         goto end_read;
 
     // lock circular buffer mutex
-    int rc = mutex_lock_interruptible(&dev->mutex);
-    if (rc != 0)                // rc = -EINTR if signal received while waiting, rc = 0 in case of success
+    if (mutex_lock_interruptible(&dev->mutex) != 0)     // rc = -EINTR if signal received while waiting, rc = 0 in case of success
         goto end_read;
 
     // fetch the data from the circular buffer
-    size_t offset = 0;
-    const struct aesd_buffer_entry *entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, &offset);
+    entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, &offset);
 
     // if any data exists, copy it into userspace
     if (entry) {
         // returned offset is < size of entry and >= 0, so we need to read at max the rest of the entry
         // however, count could be even smaller, so we need the minimum of those two
-        const size_t read_count = min((entry->size - offset), count);
+        read_count = min((entry->size - offset), count);
 
         // actually copy data into userspace
-        const int bytes_not_copied = copy_to_user(/* to */buf, /* from */entry->buffptr + offset, /* number of bytes */read_count);
+        bytes_not_copied = copy_to_user(/* to */buf, /* from */entry->buffptr + offset, /* number of bytes */read_count);
 
         // update the return value with the number of read bytes
         retval = (read_count - bytes_not_copied);
@@ -89,7 +95,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         *f_pos += (read_count - bytes_not_copied);
     }
 
-unlock_read:
     // unlock circular buffer mutex
     mutex_unlock(&dev->mutex);
 end_read:
@@ -101,6 +106,13 @@ end_read:
 ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
+    // ---
+    // ISO C90 requires all declarations at one place in the beginning
+    struct aesd_dev *dev;
+    int bytes_not_copied = 0;
+    const char* old_entry = NULL;
+    // ---
+
     ssize_t retval = -ENOMEM;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
 
@@ -108,13 +120,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     // handle write
 
     // get AESD device struct
-    struct aesd_dev *dev = filp->private_data;
-    if (!dev)
+    if (!(dev = filp->private_data))
         goto end_write;
 
     // lock circular buffer mutex
-    const int rc = mutex_lock_interruptible(&dev->mutex);
-    if (rc != 0) {              // rc = -EINTR if signal received while waiting, rc = 0 in case of success
+    if (mutex_lock_interruptible(&dev->mutex) != 0) {   // rc = -EINTR if signal received while waiting, rc = 0 in case of success
         retval = -ERESTARTSYS;
         goto end_write;
     }
@@ -123,12 +133,11 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     // we do this inside dev with an additional 'entry' object, where we append the newly written data
 
     // for appending data, first reallocate the entry with the new size (old size + buffer size)...
-    dev->tmp.buffptr = krealloc(dev->tmp.buffptr, dev->tmp.size + count, GFP_KERNEL);
-    if (!dev->tmp.buffptr)
+    if (!(dev->tmp.buffptr = krealloc(dev->tmp.buffptr, dev->tmp.size + count, GFP_KERNEL)))
         goto unlock_write;
 
     // ... and then copy the data from userspace into the newly allocated part of the entry object
-    const int bytes_not_copied = copy_from_user(/* to */dev->tmp.buffptr + dev->tmp.size, /* from */buf, /* number of bytes */count);
+    bytes_not_copied = copy_from_user(/* to */(void*)dev->tmp.buffptr + dev->tmp.size, /* from */buf, /* number of bytes */count);
 
     // also update the size of the entry object
     dev->tmp.size += (count - bytes_not_copied);
@@ -142,7 +151,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if (dev->tmp.buffptr[dev->tmp.size -1] == '\n') {
 
         // insert entry into circular buffer
-        const char* old_entry = aesd_circular_buffer_add_entry(&dev->buffer, &dev->tmp);
+        old_entry = aesd_circular_buffer_add_entry(&dev->buffer, &dev->tmp);
 
         // clear entry object; don't free it, because circular buffer now holds the pointer
         dev->tmp.buffptr = NULL;
@@ -220,6 +229,12 @@ int aesd_init_module(void)
 
 void aesd_cleanup_module(void)
 {
+    // ---
+    // ISO C90 requires all declarations at one place in the beginning
+    uint8_t index;
+    struct aesd_buffer_entry *entryptr;
+    // ---
+
     dev_t devno = MKDEV(aesd_major, aesd_minor);
 
     cdev_del(&aesd_device.cdev);
@@ -228,8 +243,6 @@ void aesd_cleanup_module(void)
     // cleanup AESD specific positions here as necessary
 
     // cleanup the circular buffer of size 10
-    uint8_t index;
-    struct aesd_buffer_entry *entryptr;
     AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &aesd_device.buffer, index) {
         if (entryptr->buffptr)
             kfree(entryptr->buffptr);

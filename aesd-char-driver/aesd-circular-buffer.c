@@ -29,12 +29,14 @@
 struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct aesd_circular_buffer *buffer,
             size_t char_offset, size_t *entry_offset_byte_rtn )
 {
+    // ISO C90 requires all declarations at one place in the beginning
+    uint8_t current_entry_offs = buffer->out_offs;
+
     // validity of parameter pointers
     if ((buffer == NULL) || (entry_offset_byte_rtn == NULL))
         return NULL;
 
     // initialize pointer to the current entry with the out pointer
-    uint8_t current_entry_offs = buffer->out_offs;
     do
     {
         // if the offset lies within the next entry, that's our return value
@@ -66,12 +68,14 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 // void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 const char* aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
+    // ISO C90 requires all declarations at one place in the beginning
+    const char* old_entry = NULL;
+
     // validity of parameter pointers
     if ((buffer == NULL) || (add_entry == NULL))
         return NULL;
 
     // if buffer is already full, remember pointer to the value we are going to overwrite
-    const char* old_entry = NULL;
     if (buffer->full)
         old_entry = buffer->entry[buffer->in_offs].buffptr;
 
