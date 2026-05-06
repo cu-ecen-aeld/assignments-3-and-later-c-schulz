@@ -111,7 +111,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     // ISO C90 requires all declarations at one place in the beginning
     struct aesd_dev *dev;
     int bytes_not_copied = 0;
-    const char* old_entry = NULL;
+    const struct aesd_buffer_entry* old_entry = NULL;
     // ---
 
     ssize_t retval = -ENOMEM;
@@ -159,8 +159,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         dev->tmp.size = 0;
 
         // we might need to free the memory of the value we have overwritten
-        if (old_entry)
-            kfree(old_entry);
+        if (old_entry->buffptr)
+            kfree(old_entry->buffptr);
     }
 
 unlock_write:
