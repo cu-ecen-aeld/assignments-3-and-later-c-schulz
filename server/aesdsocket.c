@@ -13,6 +13,7 @@
 #include <pthread.h>
 
 #include "queue.h"  // linked list implementation from freebsd-src
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 // compile switch for assignment 8
 #ifndef USE_AESD_CHAR_DEVICE
@@ -231,6 +232,9 @@ void* handle_connection (void* thread_param)
     char recv_buf[buf_size];
     char send_buf[buf_size];
 
+    // object to decrypt seekto messages
+    struct aesd_seekto seekto;
+
     // forever read data from socket (terminated by break)
     while (true)
     {
@@ -246,6 +250,22 @@ void* handle_connection (void* thread_param)
             syslog(LOG_DEBUG, "Error in recv(): %d", errno);
             break;
         }
+#if (USE_AESD_CHAR_DEVICE == 1)
+        else if (sscanf(recv_buf, "AESDCHAR_IOCSEEKTO:%u,%u\n", &seekto.write_cmd, &seekto.write_cmd_offset) == 2)
+        {
+            syslog(LOG_DEBUG, "Received iocseekto with params %d,%d", seekto.write_cmd, seekto.write_cmd_offset);
+
+            // open file descriptor to device
+            int file_fd = open(filename, O_RDWR);
+
+            // execute ioctl
+            if (ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto) != 0)
+                syslog(LOG_ERR, "Error in ioctl(): %d", errno);
+
+            // close file descriptor
+            close(file_fd);
+        }
+#endif
         else
         {
             // lock mutex
@@ -260,7 +280,7 @@ void* handle_connection (void* thread_param)
             // open (and create) file
             int file_fd = open(filename, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, S_IRWXU | S_IRWXG | S_IRWXO);
 #else
-            // open file pointer to device
+            // open file descriptor to device
             int file_fd = open(filename, O_RDWR);
 #endif
             if (file_fd < 0)
