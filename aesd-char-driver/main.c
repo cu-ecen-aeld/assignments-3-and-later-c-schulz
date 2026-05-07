@@ -19,6 +19,8 @@
 #include <linux/fs.h> // file_operations
 #include <linux/slab.h> // krealloc
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
+
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -227,13 +229,88 @@ end_llseek:
     // ---
 }
 
+static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, unsigned int write_cmd_offset)
+{
+    // ---
+    // ISO C90 requires all declarations at one place in the beginning
+    struct aesd_dev *dev;
+    long retval = 0;    // function returns 0 in case of no error
+    uint8_t offs;
+    long new_pos = 0;
+    int i = 0;
+
+    // get AESD device struct
+    if (!(dev = filp->private_data)) {
+        retval = -EFAULT;
+        goto end_adjust;
+    }
+
+    // lock circular buffer mutex
+    if (mutex_lock_interruptible(&dev->mutex) != 0) {   // rc = -EINTR if signal received while waiting, rc = 0 in case of success
+        retval = -ERESTARTSYS;
+        goto end_adjust;
+    }
+
+    // calculate location in the buffer
+    offs = (dev->buffer.out_offs + write_cmd) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+
+    // check if input values are out of bounds
+    if ((offs >= (dev->buffer.in_offs - dev->buffer.out_offs + AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)) ||
+         (write_cmd_offset >= dev->buffer.entry[offs].size)) {
+        retval = -EINVAL;
+        goto unlock_adjust;
+    }
+
+    // calculate new f_pos:
+    // 1. add size of <write_cmd> entries
+    for (i = 0; i < write_cmd; i++)
+        new_pos += dev->buffer.entry[(dev->buffer.out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED].size;
+
+    // 2. add <write_cmd_offset>
+    new_pos += write_cmd_offset;
+    filp->f_pos = new_pos;
+
+unlock_adjust:
+    // unlock circular buffer mutex
+    mutex_unlock(&dev->mutex);
+
+end_adjust:
+    return retval;
+    // ---
+}
+
+static long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    // ---
+    // ISO C90 requires all declarations at one place in the beginning
+    long retval = 0;
+
+    switch (cmd) {
+        case AESDCHAR_IOCSEEKTO:
+        {
+            struct aesd_seekto seekto;
+            if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)) != 0)
+                retval = -EFAULT;
+            else
+                retval = aesd_adjust_file_offset(filp,seekto.write_cmd,seekto.write_cmd_offset);
+            break;
+        }
+        default:
+            retval = -EINVAL;
+    }
+
+    return retval;
+    // ---
+}
+
 struct file_operations aesd_fops = {
-    .owner =    THIS_MODULE,
-    .read =     aesd_read,
-    .write =    aesd_write,
-    .open =     aesd_open,
-    .release =  aesd_release,
-    .llseek =   aesd_llseek,
+    .owner =          THIS_MODULE,
+    .read =           aesd_read,
+    .write =          aesd_write,
+    .open =           aesd_open,
+    .release =        aesd_release,
+    .llseek =         aesd_llseek,
+    .unlocked_ioctl = aesd_unlocked_ioctl,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
