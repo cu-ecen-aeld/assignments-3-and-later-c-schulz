@@ -232,8 +232,10 @@ void* handle_connection (void* thread_param)
     char recv_buf[buf_size];
     char send_buf[buf_size];
 
+#if (USE_AESD_CHAR_DEVICE == 1)
     // object to decrypt seekto messages
     struct aesd_seekto seekto;
+#endif
 
     // forever read data from socket (terminated by break)
     while (true)
