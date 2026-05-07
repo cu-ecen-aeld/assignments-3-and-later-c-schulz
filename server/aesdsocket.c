@@ -306,12 +306,12 @@ void* handle_connection (void* thread_param)
             // if end of package is reached, send file via socket
             if (!schedule_ioctl && recv_buf[recv_size-1] == '\n') {
 
-                // seek back to begin of file before reading
-                rc = lseek(file_fd, 0, SEEK_SET);
-                if (rc != 0)
-                {
-                    syslog(LOG_DEBUG, "Error in lseek(): %d", errno);
-                }
+                // // seek back to begin of file before reading
+                // rc = lseek(file_fd, 0, SEEK_SET);
+                // if (rc != 0)
+                // {
+                //     syslog(LOG_DEBUG, "Error in lseek(): %d", errno);
+                // }
 
                 // send full content of file via socket back to client
                 int sz;
