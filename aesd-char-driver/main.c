@@ -93,7 +93,8 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
         retval = (read_count - bytes_not_copied);
 
         // and increase the f_pos by that amount
-        *f_pos += (read_count - bytes_not_copied);
+        // assignment 9) "must set *fpos to *fpos + retcount where retcount is the number of bytes read"
+        *f_pos += retval;
     }
 
     // unlock circular buffer mutex
@@ -146,6 +147,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     // update return value s.t. the number of written bytes is returned
     // (at least they were written to the entry object already)
     retval = (count - bytes_not_copied);
+
+    // assignment 9) "must set *fpos to *fpos + retcount where retcount is the number of bytes written"
+    *f_pos += retval;
 
     // if a '\n' is received, insert entry into circular buffer and clear the entry object
     // TODO: can we assume that '\n' occurs only at the end of buf / the entry object?
