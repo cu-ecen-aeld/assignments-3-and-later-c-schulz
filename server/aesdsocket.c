@@ -271,13 +271,11 @@ void* handle_connection (void* thread_param)
                 break;
             }
 
-            bool schedule_ioctl = false;
 #if (USE_AESD_CHAR_DEVICE == 1)
             // decrypt seekto messages
             struct aesd_seekto seekto;
             if (sscanf(recv_buf, "AESDCHAR_IOCSEEKTO:%u,%u\n", &seekto.write_cmd, &seekto.write_cmd_offset) == 2)
             {
-                schedule_ioctl = true;
                 syslog(LOG_DEBUG, "Received iocseekto with params %d,%d", seekto.write_cmd, seekto.write_cmd_offset);
 
                 // execute ioctl
@@ -285,14 +283,11 @@ void* handle_connection (void* thread_param)
                     syslog(LOG_ERR, "Error in ioctl(): %d", errno);
             }
 #endif
-            if (!schedule_ioctl)
+            // write received data to file
+            rc = write(file_fd, recv_buf, recv_size);
+            if (rc < recv_size)
             {
-                // write received data to file
-                rc = write(file_fd, recv_buf, recv_size);
-                if (rc < recv_size)
-                {
-                    syslog(LOG_DEBUG, "Error in write(): %d", errno);
-                }
+                syslog(LOG_DEBUG, "Error in write(): %d", errno);
             }
 
             // unlock mutex --> TODO: move this after send?
@@ -304,7 +299,7 @@ void* handle_connection (void* thread_param)
             }
 
             // if end of package is reached, send file via socket
-            if (!schedule_ioctl && recv_buf[recv_size-1] == '\n') {
+            if (recv_buf[recv_size-1] == '\n') {
 
                 // seek back to begin of file before reading
                 rc = lseek(file_fd, 0, SEEK_SET);
