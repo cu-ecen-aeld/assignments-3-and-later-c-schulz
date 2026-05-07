@@ -171,12 +171,65 @@ end_write:
 
     return retval;
 }
+
+static loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
+{
+    // ---
+    // ISO C90 requires all declarations at one place in the beginning
+    struct aesd_dev *dev;
+    int device_size = 0;
+    loff_t retval = 0;
+    uint8_t index;
+    struct aesd_buffer_entry *entryptr;
+
+    // get AESD device struct
+    if (!(dev = filp->private_data)) {
+        retval = -EFAULT;
+        goto end_llseek;
+    }
+
+    // lock circular buffer mutex
+    if (mutex_lock_interruptible(&dev->mutex) != 0) {   // rc = -EINTR if signal received while waiting, rc = 0 in case of success
+        retval = -ERESTARTSYS;
+        goto end_llseek;
+    }
+
+    // calculate total size of circular buffer by accumulating the size of its entries
+    AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &dev->buffer, index) {
+        if (entryptr->buffptr)  // otherwise, size should be zero, but let's be sure to only add the size if the value exists
+            device_size += entryptr->size;
+    };
+
+    // unlock circular buffer mutex
+    mutex_unlock(&dev->mutex);
+
+    // let fixed_size_llseek set filp->f_pos
+    retval = fixed_size_llseek(filp, offset, whence, device_size);
+
+    // alternatively, set f_pos directly:
+    //
+    // SEEK_SET: new_pos = offset;
+    // SEEK_CUR: new_pos += offset;
+    // SEEK_END: new_pos = device_size + offset;
+    // default:  return -EINVAL
+    //
+    // if (new_pos < 0 || new_pos >= device_size): return -EINVAL
+    // filp->f_pos = new_pos;
+    //
+    // retval = new_pos;
+
+end_llseek:
+    return retval;
+    // ---
+}
+
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,
     .read =     aesd_read,
     .write =    aesd_write,
     .open =     aesd_open,
     .release =  aesd_release,
+    .llseek =   aesd_llseek,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
