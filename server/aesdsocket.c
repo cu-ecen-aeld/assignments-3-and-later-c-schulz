@@ -257,16 +257,11 @@ void* handle_connection (void* thread_param)
                 break;
             }
 
-#if (USE_AESD_CHAR_DEVICE == 0)
-            // open (and create) file
-            int file_fd = open(filename, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, S_IRWXU | S_IRWXG | S_IRWXO);
-#else
-            // open file descriptor to device
-            int file_fd = open(filename, O_RDWR);
-#endif
-            if (file_fd < 0)
+            // open file descriptor to device for reading
+            int file_fd_rd = open(filename, O_RDONLY);
+            if (file_fd_rd < 0)
             {
-                syslog(LOG_ERR, "Error in open(): %d", errno);
+                syslog(LOG_ERR, "Error in open() for read: %d", errno);
                 pthread_mutex_unlock(thread_args->mutex_ptr);
                 break;
             }
@@ -279,19 +274,19 @@ void* handle_connection (void* thread_param)
                 syslog(LOG_DEBUG, "Received iocseekto with params %d,%d", seekto.write_cmd, seekto.write_cmd_offset);
 
                 // don't write ioctl command to file, only execute seekto ioctl
-                if (ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto) != 0)
+                if (ioctl(file_fd_rd, AESDCHAR_IOCSEEKTO, &seekto) != 0)
                     syslog(LOG_ERR, "Error in ioctl(): %d", errno);
             }
             else
 #endif
             {
                 // write changes f_pos, so we need a separate fd for writing
-                int file_fd_wr = open(filename, O_RDWR);
+                int file_fd_wr = open(filename, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, S_IRWXU | S_IRWXG | S_IRWXO);
                 if (file_fd_wr < 0)
                 {
-                    syslog(LOG_ERR, "Error in wr open(): %d", errno);
+                    syslog(LOG_ERR, "Error in open() for write: %d", errno);
                     pthread_mutex_unlock(thread_args->mutex_ptr);
-                    close(file_fd_wr);
+                    close(file_fd_rd);
                     break;
                 }
 
@@ -304,14 +299,6 @@ void* handle_connection (void* thread_param)
                 close(file_fd_wr);
             }
 
-            // unlock mutex --> TODO: move this after send?
-            rc = pthread_mutex_unlock(thread_args->mutex_ptr);
-            if (rc != 0)
-            {
-                syslog(LOG_ERR, "Error in mutex unlock(): %d", rc);
-                break;
-            }
-
             // if end of package is reached, send file via socket
             if (recv_buf[recv_size-1] == '\n') {
 
@@ -320,7 +307,7 @@ void* handle_connection (void* thread_param)
 
                 // send full content of file via socket back to client
                 int sz;
-                while ((sz = read(file_fd, send_buf, buf_size)) > 0)
+                while ((sz = read(file_fd_rd, send_buf, buf_size)) > 0)
                 {
                     syslog(LOG_DEBUG, "Read %d bytes", (int)sz);
                     rc = send(thread_args->stream_fd, send_buf, sz, MSG_DONTWAIT);
@@ -330,8 +317,16 @@ void* handle_connection (void* thread_param)
                     }
                 }
             }
+            close(file_fd_rd);
 
-            close(file_fd);
+            // unlock mutex
+            rc = pthread_mutex_unlock(thread_args->mutex_ptr);
+            if (rc != 0)
+            {
+                syslog(LOG_ERR, "Error in mutex unlock(): %d", rc);
+                break;
+            }
+
             // don't break, continue receiving
         }
     }
