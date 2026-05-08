@@ -151,7 +151,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     retval = (count - bytes_not_copied);
 
     // assignment 9) "must set *fpos to *fpos + retcount where retcount is the number of bytes written"
-    *f_pos += retval;
+    // *f_pos += retval;    // TODO
 
     // if a '\n' is received, insert entry into circular buffer and clear the entry object
     // TODO: can we assume that '\n' occurs only at the end of buf / the entry object?
@@ -293,7 +293,7 @@ static long aesd_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned lo
             if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)) != 0)
                 retval = -EFAULT;
             else
-                retval = aesd_adjust_file_offset(filp,seekto.write_cmd,seekto.write_cmd_offset);
+                retval = aesd_adjust_file_offset(filp, seekto.write_cmd, seekto.write_cmd_offset);
             break;
         }
         default:
