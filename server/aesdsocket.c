@@ -271,24 +271,31 @@ void* handle_connection (void* thread_param)
                 break;
             }
 
-            bool schedule_ioctl = false;
 #if (USE_AESD_CHAR_DEVICE == 1)
             // decrypt seekto messages
             struct aesd_seekto seekto;
             if (sscanf(recv_buf, "AESDCHAR_IOCSEEKTO:%u,%u\n", &seekto.write_cmd, &seekto.write_cmd_offset) == 2)
             {
-                schedule_ioctl = true;
                 syslog(LOG_DEBUG, "Received iocseekto with params %d,%d", seekto.write_cmd, seekto.write_cmd_offset);
 
-                // execute ioctl
+                // don't write ioctl command to file, only execute seekto ioctl
                 if (ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seekto) != 0)
                     syslog(LOG_ERR, "Error in ioctl(): %d", errno);
             }
+            else
 #endif
-            if (!schedule_ioctl)    // don't write ioctl command to file
             {
+                // write changes f_pos, so we need a separate fd for writing
+                int file_fd_wr = open(filename, O_RDWR);
+                if (file_fd_wr < 0)
+                {
+                    syslog(LOG_ERR, "Error in wr open(): %d", errno);
+                    pthread_mutex_unlock(thread_args->mutex_ptr);
+                    break;
+                }
+
                 // write received data to file
-                rc = write(file_fd, recv_buf, recv_size);
+                rc = write(file_fd_wr, recv_buf, recv_size);
                 if (rc < recv_size)
                 {
                     syslog(LOG_DEBUG, "Error in write(): %d", errno);
@@ -306,14 +313,8 @@ void* handle_connection (void* thread_param)
             // if end of package is reached, send file via socket
             if (recv_buf[recv_size-1] == '\n') {
 
-#if (USE_AESD_CHAR_DEVICE == 0)
-                // seek back to begin of file before reading (not in device driver mode because we do ioctl seek there)
-                rc = lseek(file_fd, 0, SEEK_SET);
-                if (rc != 0)
-                {
-                    syslog(LOG_DEBUG, "Error in lseek(): %d", errno);
-                }
-#endif
+                // we don't need to seek back to begin of file before reading
+                // because we opened a separate fd for writing and the file_fd f_pos remains unmodified
 
                 // send full content of file via socket back to client
                 int sz;
