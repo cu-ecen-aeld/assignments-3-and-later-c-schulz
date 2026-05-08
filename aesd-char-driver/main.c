@@ -236,6 +236,7 @@ static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, u
     struct aesd_dev *dev;
     long retval = 0;    // function returns 0 in case of no error
     uint8_t offs;
+    uint8_t max_offs;
     long new_pos = 0;
     int i = 0;
 
@@ -253,10 +254,10 @@ static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, u
 
     // calculate location in the buffer
     offs = (dev->buffer.out_offs + write_cmd) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    max_offs = (dev->buffer.in_offs - dev->buffer.out_offs + AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
 
     // check if input values are out of bounds
-    if ((offs >= (dev->buffer.in_offs - dev->buffer.out_offs + AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)) ||
-         (write_cmd_offset >= dev->buffer.entry[offs].size)) {
+    if ((offs >= max_offs) || (write_cmd_offset >= dev->buffer.entry[offs].size)) {
         retval = -EINVAL;
         goto unlock_adjust;
     }
