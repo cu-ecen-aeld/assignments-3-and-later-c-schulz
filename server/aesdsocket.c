@@ -281,7 +281,11 @@ void* handle_connection (void* thread_param)
 #endif
             {
                 // write changes f_pos, so we need a separate fd for writing
+#if (USE_AESD_CHAR_DEVICE == 1)
+                int file_fd_wr = open(filename, O_RDWR);
+#else
                 int file_fd_wr = open(filename, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, S_IRWXU | S_IRWXG | S_IRWXO);
+#endif
                 if (file_fd_wr < 0)
                 {
                     syslog(LOG_ERR, "Error in open() for write: %d", errno);
