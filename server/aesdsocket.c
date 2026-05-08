@@ -285,8 +285,8 @@ void* handle_connection (void* thread_param)
                 if (file_fd_wr < 0)
                 {
                     syslog(LOG_ERR, "Error in open() for write: %d", errno);
-                    pthread_mutex_unlock(thread_args->mutex_ptr);
                     close(file_fd_rd);
+                    pthread_mutex_unlock(thread_args->mutex_ptr);
                     break;
                 }
 
