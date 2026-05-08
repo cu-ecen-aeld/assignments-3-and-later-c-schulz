@@ -234,11 +234,11 @@ static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, u
     // ---
     // ISO C90 requires all declarations at one place in the beginning
     struct aesd_dev *dev;
+    int device_size = 0;
     long retval = 0;    // function returns 0 in case of no error
-    uint8_t offs;
-    uint8_t max_offs;
     long new_pos = 0;
-    int i = 0;
+    uint8_t index;
+    struct aesd_buffer_entry *entryptr;
 
     // get AESD device struct
     if (!(dev = filp->private_data)) {
@@ -252,23 +252,26 @@ static long aesd_adjust_file_offset(struct file *filp, unsigned int write_cmd, u
         goto end_adjust;
     }
 
-    // calculate location in the buffer
-    offs = (dev->buffer.out_offs + write_cmd) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-    max_offs = (dev->buffer.in_offs - dev->buffer.out_offs + AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-
-    // check if input values are out of bounds
-    if ((offs >= max_offs) || (write_cmd_offset >= dev->buffer.entry[offs].size)) {
-        retval = -EINVAL;
-        goto unlock_adjust;
-    }
-
     // calculate new f_pos:
-    // 1. add size of <write_cmd> entries
-    for (i = 0; i < write_cmd; i++)
-        new_pos += dev->buffer.entry[(dev->buffer.out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED].size;
+    AESD_CIRCULAR_BUFFER_FOREACH(entryptr, &dev->buffer, index) {
+        if (entryptr->buffptr) {
+            device_size += entryptr->size;  // accumulate maximum value
+            if (index < write_cmd) {
+                // 1. add size of <write_cmd> entries
+                new_pos += entryptr->size;
+            }
+            else if (index == write_cmd) {
+                if ((write_cmd_offset >= entryptr->size) || (new_pos > device_size)) {
+                    retval = -EINVAL;
+                    goto unlock_adjust;
+                }
+                // 2. add <write_cmd_offset>
+                new_pos += write_cmd_offset;
+            }
+        }
+    };
 
-    // 2. add <write_cmd_offset>
-    new_pos += write_cmd_offset;
+    // modify f_pos
     filp->f_pos = new_pos;
 
 unlock_adjust:
