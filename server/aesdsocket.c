@@ -291,6 +291,7 @@ void* handle_connection (void* thread_param)
                 {
                     syslog(LOG_ERR, "Error in wr open(): %d", errno);
                     pthread_mutex_unlock(thread_args->mutex_ptr);
+                    close(file_fd_wr);
                     break;
                 }
 
@@ -300,6 +301,7 @@ void* handle_connection (void* thread_param)
                 {
                     syslog(LOG_DEBUG, "Error in write(): %d", errno);
                 }
+                close(file_fd_wr);
             }
 
             // unlock mutex --> TODO: move this after send?
