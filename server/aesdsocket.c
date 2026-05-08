@@ -285,7 +285,7 @@ void* handle_connection (void* thread_param)
                     syslog(LOG_ERR, "Error in ioctl(): %d", errno);
             }
 #endif
-            if (!schedule_ioctl)
+            if (!schedule_ioctl)    // don't write ioctl command to file
             {
                 // write received data to file
                 rc = write(file_fd, recv_buf, recv_size);
@@ -306,12 +306,14 @@ void* handle_connection (void* thread_param)
             // if end of package is reached, send file via socket
             if (recv_buf[recv_size-1] == '\n') {
 
-                // seek back to begin of file before reading
+#if (USE_AESD_CHAR_DEVICE == 0)
+                // seek back to begin of file before reading (not in device driver mode because we do ioctl seek there)
                 rc = lseek(file_fd, 0, SEEK_SET);
                 if (rc != 0)
                 {
                     syslog(LOG_DEBUG, "Error in lseek(): %d", errno);
                 }
+#endif
 
                 // send full content of file via socket back to client
                 int sz;
